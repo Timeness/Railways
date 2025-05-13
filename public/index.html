@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Synchronized JioSaavn Music</title>
+</head>
+<body>
+  <h2>Group Music Sync</h2>
+
+  <input type="text" id="searchInput" placeholder="Search a song..." />
+  <button id="searchBtn">Search & Play</button>
+
+  <br><br>
+  <audio id="audio" controls></audio>
+
+  <script src="https://cdn.socket.io/4.5.4/socket.io.min.js"></script>
+  <script>
+    const socket = io();
+    const audio = document.getElementById('audio');
+    const searchBtn = document.getElementById('searchBtn');
+    const searchInput = document.getElementById('searchInput');
+    const params = new URLSearchParams(window.location.search);
+    const groupId = params.get('group') || 'default';
+
+    let isSynced = false;
+
+    socket.emit('joinGroup', groupId);
+
+    // Search and play from API
+    searchBtn.addEventListener('click', async () => {
+      const query = searchInput.value.trim();
+      if (!query) return;
+
+      const res = await fetch(`https://jiosaavn-api-privatecvc2.vercel.app/search/songs?query=${encodeURIComponent(query)}`);
+      const data = await res.json();
+      const song = data?.data?.results?.[0];
+
+      if (song) {
+        audio.src = song.downloadUrl[4].link; // 320kbps
+        audio.play();
+        socket.emit('songChanged', { groupId, src: audio.src });
+      } else {
+        alert("No song found");
+      }
+    });
+
+    // Sync play
+    audio.addEventListener('play', () => {
+      if (!isSynced) {
+        socket.emit('play', { groupId, time: audio.currentTime });
+      }
+    });
+
+    audio.addEventListener('pause', () => {
+      if (!isSynced) {
+        socket.emit('pause', { groupId });
+      }
+    });
+
+    // Receive sync events
+    socket.on('play', (time) => {
+      isSynced = true;
+      audio.currentTime = time;
+      audio.play();
+      setTimeout(() => isSynced = false, 1000);
+    });
+
+    socket.on('pause', () => {
+      isSynced = true;
+      audio.pause();
+      setTimeout(() => isSynced = false, 1000);
+    });
+
+    socket.on('songChanged', (src) => {
+      audio.src = src;
+      audio.play();
+    });
+  </script>
+</body>
+</html>
