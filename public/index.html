@@ -1,80 +1,87 @@
 <!DOCTYPE html>
 <html lang="en">
-<head>
-  <meta charset="UTF-8">
-  <title>Synchronized JioSaavn Music</title>
-</head>
-<body>
-  <h2>Group Music Sync</h2>
-
-  <input type="text" id="searchInput" placeholder="Search a song..." />
-  <button id="searchBtn">Search & Play</button>
-
-  <br><br>
-  <audio id="audio" controls></audio>
-
-  <script src="https://cdn.socket.io/4.5.4/socket.io.min.js"></script>
-  <script>
-    const socket = io();
-    const audio = document.getElementById('audio');
-    const searchBtn = document.getElementById('searchBtn');
-    const searchInput = document.getElementById('searchInput');
-    const params = new URLSearchParams(window.location.search);
-    const groupId = params.get('group') || 'default';
-
-    let isSynced = false;
-
-    socket.emit('joinGroup', groupId);
-
-    // Search and play from API
-    searchBtn.addEventListener('click', async () => {
-      const query = searchInput.value.trim();
-      if (!query) return;
-
-      const res = await fetch(`https://jiosaavn-api-privatecvc2.vercel.app/search/songs?query=${encodeURIComponent(query)}`);
-      const data = await res.json();
-      const song = data?.data?.results?.[0];
-
-      if (song) {
-        audio.src = song.downloadUrl[4].link; // 320kbps
-        audio.play();
-        socket.emit('songChanged', { groupId, src: audio.src });
-      } else {
-        alert("No song found");
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Group Audio Sync</title>
+    <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet" />
+    <link href="https://fonts.googleapis.com/css2?family=Rubik:wght@400;500;700&display=swap" rel="stylesheet" />
+    <script src="https://cdn.socket.io/4.5.4/socket.io.min.js"></script>
+    <style>
+      body {
+        font-family: 'Rubik', sans-serif;
+        background-color: #0d0d0d;
+        color: white;
       }
-    });
-
-    // Sync play
-    audio.addEventListener('play', () => {
-      if (!isSynced) {
-        socket.emit('play', { groupId, time: audio.currentTime });
+      input::placeholder {
+        color: #999;
       }
-    });
+    </style>
+  </head>
+  <body class="min-h-screen flex flex-col items-center justify-center p-4">
+    <h1 class="text-3xl font-semibold mb-4">Audio Sync Player</h1>
 
-    audio.addEventListener('pause', () => {
-      if (!isSynced) {
-        socket.emit('pause', { groupId });
+    <div class="bg-[#1a1a1a] p-6 rounded-xl w-full max-w-md shadow-lg">
+      <input
+        id="searchInput"
+        type="text"
+        placeholder="Search song..."
+        class="w-full p-3 rounded-md bg-[#121212] border border-[#333] text-white mb-4 focus:outline-none"
+      />
+      <button
+        onclick="searchSong()"
+        class="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-medium py-2 rounded-md transition"
+      >
+        Search & Play
+      </button>
+
+      <audio id="audio" controls class="w-full mt-5 rounded-md bg-black"></audio>
+    </div>
+
+    <p class="mt-6 text-sm text-gray-400">Group ID: <span id="groupIdDisplay">---</span></p>
+
+    <script>
+      const socket = io();
+      const params = new URLSearchParams(location.search);
+      const groupId = params.get('group') || 'default';
+      document.getElementById('groupIdDisplay').innerText = groupId;
+
+      const audio = document.getElementById('audio');
+      socket.emit('joinGroup', groupId);
+
+      function tryPlay(audio) {
+        const playPromise = audio.play();
+        if (playPromise !== undefined) {
+          playPromise.catch(() => {
+            document.body.addEventListener('click', () => {
+              audio.play();
+            }, { once: true });
+          });
+        }
       }
-    });
 
-    // Receive sync events
-    socket.on('play', (time) => {
-      isSynced = true;
-      audio.currentTime = time;
-      audio.play();
-      setTimeout(() => isSynced = false, 1000);
-    });
+      function searchSong() {
+        const query = document.getElementById("searchInput").value.trim();
+        if (!query) return;
 
-    socket.on('pause', () => {
-      isSynced = true;
-      audio.pause();
-      setTimeout(() => isSynced = false, 1000);
-    });
+        fetch(`https://jiosaavn-api-privatecvc2.vercel.app/search/songs?query=${encodeURIComponent(query)}`)
+          .then(res => res.json())
+          .then(data => {
+            const song = data?.data?.results?.[0];
+            if (song && song.downloadUrl?.[4]?.link) {
+              audio.src = song.downloadUrl[4].link;
+              tryPlay(audio);
+              socket.emit("syncPlay", { groupId, songUrl: song.downloadUrl[4].link });
+            }
+          });
+      }
 
-    socket.on('songChanged', (src) => {
-      audio.src = src;
-      audio.play();
-    });
-  </script>
-</body>
+      socket.on("syncPlay", ({ groupId: g, songUrl }) => {
+        if (g === groupId) {
+          audio.src = songUrl;
+          tryPlay(audio);
+        }
+      });
+    </script>
+  </body>
 </html>
